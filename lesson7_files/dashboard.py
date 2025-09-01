@@ -121,8 +121,8 @@ def format_currency(value):
 
 def format_trend(current, previous):
     """Format trend indicators with arrows and colors"""
-    if previous == 0:
-        return "N/A"
+    if previous == 0 or pd.isna(previous) or pd.isna(current):
+        return '<span class="trend-negative">N/A</span>'
     
     change_pct = ((current - previous) / previous) * 100
     arrow = "↗" if change_pct > 0 else "↘"
@@ -186,15 +186,41 @@ def create_revenue_trend_chart(current_data, previous_data, current_year, previo
             yaxis_title="Revenue"
         )
     
+    # Format Y-axis with K/M suffixes
+    max_value = max(current_data.groupby('purchase_month')['price'].sum().max() if current_months > 1 else current_data['price'].sum(),
+                    previous_data.groupby('purchase_month')['price'].sum().max() if previous_data is not None and current_months > 1 else (previous_data['price'].sum() if previous_data is not None else 0))
+    
+    def format_axis_tick(x, pos):
+        if x >= 1e6:
+            return f"${x/1e6:.0f}M"
+        elif x >= 1e3:
+            return f"${x/1e3:.0f}K"
+        else:
+            return f"${x:.0f}"
+    
     fig.update_layout(
         showlegend=True,
         hovermode='x unified',
         plot_bgcolor='white',
         xaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
-        yaxis=dict(showgrid=True, gridcolor='#f0f0f0', tickformat='$,.0f'),
+        yaxis=dict(showgrid=True, gridcolor='#f0f0f0', 
+                  tickformat='$,.0f' if max_value < 1000 else None),
         height=350,
         margin=dict(t=50, b=50, l=50, r=50)
     )
+    
+    # Apply custom tick formatting for larger values
+    if max_value >= 1000:
+        fig.update_yaxes(tickformat='.0f', tickprefix='$')
+        # Create custom tick values
+        if max_value >= 1e6:
+            tick_vals = [i * 1e6 for i in range(0, int(max_value/1e6) + 2)]
+            tick_texts = [f"${i}M" for i in range(0, int(max_value/1e6) + 2)]
+        else:
+            tick_vals = [i * 1e3 * 100 for i in range(0, int(max_value/(1e3*100)) + 2)]
+            tick_texts = [f"${i*100}K" for i in range(0, int(max_value/(1e3*100)) + 2)]
+        
+        fig.update_yaxes(tickmode='array', tickvals=tick_vals, ticktext=tick_texts)
     
     return fig
 
@@ -225,16 +251,31 @@ def create_category_chart(sales_data):
         )
     ])
     
+    # Format X-axis with K/M suffixes
+    max_value = category_revenue.max()
+    
     fig.update_layout(
         title="Top 10 Product Categories",
         xaxis_title="Revenue",
         yaxis_title="",
         plot_bgcolor='white',
-        xaxis=dict(showgrid=True, gridcolor='#f0f0f0', tickformat='$,.0f'),
+        xaxis=dict(showgrid=True, gridcolor='#f0f0f0'),
         yaxis=dict(showgrid=False),
         height=350,
         margin=dict(t=50, b=50, l=150, r=50)
     )
+    
+    # Apply custom X-axis formatting for larger values
+    if max_value >= 1000:
+        if max_value >= 1e6:
+            tick_vals = [i * 1e6 for i in range(0, int(max_value/1e6) + 2)]
+            tick_texts = [f"${i}M" for i in range(0, int(max_value/1e6) + 2)]
+        else:
+            step = 100000 if max_value >= 500000 else 50000
+            tick_vals = [i * step for i in range(0, int(max_value/step) + 2)]
+            tick_texts = [f"${int(i*step/1000)}K" for i in range(0, int(max_value/step) + 2)]
+        
+        fig.update_xaxes(tickmode='array', tickvals=tick_vals, ticktext=tick_texts)
     
     return fig
 
@@ -344,34 +385,42 @@ def main():
         st.title("📊 E-commerce Analytics Dashboard")
     
     with col2:
-        # Get available years from data
+        # Get available years from data and ensure 2023 is default
         orders_data = processed_data['orders']
         available_years = sorted(orders_data['purchase_year'].unique(), reverse=True)
         
-        # Set default year to 2023 if available, otherwise use the first year
-        default_year_index = 0
-        if 2023 in available_years:
-            default_year_index = available_years.index(2023)
+        # Ensure 2023 is the default selection
+        default_year = 2023 if 2023 in available_years else available_years[0]
+        default_year_index = available_years.index(default_year)
         
         selected_year = st.selectbox(
-            "Select Year",
+            "Analysis Year",
             options=available_years,
             index=default_year_index,
             key="year_filter"
         )
     
     with col3:
-        # Month filter
-        month_options = ['All Months'] + [f'Month {i}' for i in range(1, 13)]
+        # Improved month filter with proper month names
+        month_names = {
+            1: "January", 2: "February", 3: "March", 4: "April", 
+            5: "May", 6: "June", 7: "July", 8: "August",
+            9: "September", 10: "October", 11: "November", 12: "December"
+        }
+        
+        month_options = ["All Months"] + [f"{i}. {month_names[i]}" for i in range(1, 13)]
         selected_month_display = st.selectbox(
-            "Select Month",
+            "Analysis Month",
             options=month_options,
-            index=0,
+            index=0,  # Default to "All Months"
             key="month_filter"
         )
         
         # Convert display to actual month number
-        selected_month = None if selected_month_display == 'All Months' else int(selected_month_display.split(' ')[1])
+        if selected_month_display == "All Months":
+            selected_month = None
+        else:
+            selected_month = int(selected_month_display.split('.')[0])
     
     # Create datasets based on selected year and month
     current_data = loader.create_sales_dataset(
@@ -395,13 +444,23 @@ def main():
     avg_order_value = current_data.groupby('order_id')['price'].sum().mean()
     
     # Calculate previous year metrics for trends
-    prev_revenue = previous_data['price'].sum() if previous_data is not None else 0
-    prev_orders = previous_data['order_id'].nunique() if previous_data is not None else 0
-    prev_aov = previous_data.groupby('order_id')['price'].sum().mean() if previous_data is not None else 0
+    prev_revenue = previous_data['price'].sum() if previous_data is not None and not previous_data.empty else 0
+    prev_orders = previous_data['order_id'].nunique() if previous_data is not None and not previous_data.empty else 0
+    prev_aov = previous_data.groupby('order_id')['price'].sum().mean() if previous_data is not None and not previous_data.empty and len(previous_data) > 0 else 0
+    
+    # Handle NaN values
+    if pd.isna(avg_order_value):
+        avg_order_value = 0
+    if pd.isna(prev_aov):
+        prev_aov = 0
     
     # Monthly growth calculation
     monthly_data = current_data.groupby('purchase_month')['price'].sum()
-    monthly_growth = monthly_data.pct_change().mean() * 100 if len(monthly_data) > 1 else 0
+    if len(monthly_data) > 1:
+        monthly_growth_raw = monthly_data.pct_change().mean() * 100
+        monthly_growth = monthly_growth_raw if not pd.isna(monthly_growth_raw) else 0
+    else:
+        monthly_growth = 0
     
     # KPI Row - 4 cards
     st.markdown("### Key Performance Indicators")
@@ -481,10 +540,17 @@ def main():
     bottom_col1, bottom_col2 = st.columns(2)
     
     with bottom_col1:
-        # Average delivery time
-        if 'delivery_days' in current_data.columns:
+        # Average delivery time - only show if data exists
+        if 'delivery_days' in current_data.columns and not current_data['delivery_days'].isna().all():
             avg_delivery = current_data['delivery_days'].mean()
-            prev_delivery = previous_data['delivery_days'].mean() if previous_data is not None else 0
+            prev_delivery = previous_data['delivery_days'].mean() if previous_data is not None and not previous_data.empty and 'delivery_days' in previous_data.columns else 0
+            
+            # Handle NaN values
+            if pd.isna(avg_delivery):
+                avg_delivery = 0
+            if pd.isna(prev_delivery):
+                prev_delivery = 0
+                
             delivery_trend = format_trend(avg_delivery, prev_delivery)
             
             st.markdown(f"""
@@ -495,33 +561,45 @@ def main():
             </div>
             """, unsafe_allow_html=True)
         else:
+            # Show placeholder with meaningful message
             st.markdown("""
             <div class="bottom-card">
                 <p class="metric-label">Average Delivery Time</p>
-                <p class="metric-value">N/A</p>
-                <p class="metric-trend">Data not available</p>
+                <p class="metric-value">--</p>
+                <p class="metric-trend" style="color: #999;">No delivery data available</p>
             </div>
             """, unsafe_allow_html=True)
     
     with bottom_col2:
-        # Review score
-        if 'review_score' in current_data.columns:
+        # Review score with stars - only show if data exists
+        if 'review_score' in current_data.columns and not current_data['review_score'].isna().all():
             avg_review = current_data['review_score'].mean()
+            
+            # Handle NaN values
+            if pd.isna(avg_review):
+                avg_review = 0
+            
+            # Ensure score is between 0-5
+            avg_review = max(0, min(5, avg_review))
+            
             stars = "★" * int(round(avg_review))
+            empty_stars = "☆" * (5 - int(round(avg_review)))
             
             st.markdown(f"""
             <div class="bottom-card">
+                <p class="metric-value" style="font-size: 2.5rem; margin-bottom: 0.5rem;">{avg_review:.1f}</p>
+                <p class="stars" style="font-size: 1.5rem; margin-bottom: 0.5rem;">{stars}{empty_stars}</p>
                 <p class="metric-label">Average Review Score</p>
-                <p class="metric-value">{avg_review:.1f}/5.0</p>
-                <p class="stars">{stars}</p>
             </div>
             """, unsafe_allow_html=True)
         else:
+            # Show placeholder with meaningful message
             st.markdown("""
             <div class="bottom-card">
+                <p class="metric-value" style="font-size: 2.5rem; margin-bottom: 0.5rem;">--</p>
+                <p class="stars" style="font-size: 1.5rem; margin-bottom: 0.5rem;">☆☆☆☆☆</p>
                 <p class="metric-label">Average Review Score</p>
-                <p class="metric-value">N/A</p>
-                <p class="metric-trend">Data not available</p>
+                <p class="metric-trend" style="color: #999;">No review data available</p>
             </div>
             """, unsafe_allow_html=True)
 

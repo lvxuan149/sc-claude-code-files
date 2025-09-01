@@ -282,26 +282,58 @@ def plot_custom_metric(self, data):
 
 ## Dashboard Features
 
-### Layout Structure
-- **Header**: Title with year selection filter (applies globally)
+### Streamlit Dashboard Layout Structure
+- **Header**: Title (left) + Date range filter (right) - applies globally to all charts
 - **KPI Row**: 4 metric cards with trend indicators
   - Total Revenue, Monthly Growth, Average Order Value, Total Orders
-  - Color-coded trends (green for positive, red for negative)
-- **Charts Grid**: 2x2 interactive visualization layout
-  - Revenue trend (current vs previous year)
-  - Top 10 product categories bar chart
-  - US state choropleth map
-  - Customer satisfaction vs delivery time analysis
-- **Bottom Row**: Customer experience metrics
-  - Average delivery time with trend
-  - Review score with star rating
+  - Red for negative trends, green for positive trends
+  - Two decimal places for all trend indicators
+- **Charts Grid**: 2x2 layout with Plotly visualizations
+  - **Revenue trend line chart**: 
+    - Solid line for current period, dashed line for previous period
+    - Grid lines for easier reading
+    - Y-axis formatted as $300K instead of $300,000
+  - **Top 10 categories bar chart**: 
+    - Sorted descending by revenue
+    - Blue gradient (lighter for lower values)
+    - Values formatted as $300K and $2M
+  - **Revenue by state**: US choropleth map with blue gradient color coding
+  - **Satisfaction vs delivery time**: Bar chart showing review scores by delivery time buckets
+- **Bottom Row**: 2 customer experience cards with uniform heights
+  - Average delivery time with trend indicator  
+  - Review Score: Large number with stars and "Average Review Score" subtitle
 
 ### Technical Features
-- **Real-time Filtering**: All visualizations update automatically
-- **Professional Styling**: Business-ready interface with uniform card heights
+- **Real-time Filtering**: All visualizations update automatically when year/month is changed
+- **Professional Styling**: Business-ready interface with uniform card heights (no icons used)
 - **Plotly Charts**: Interactive, publication-quality visualizations
+- **Currency Formatting**: Shows $300K instead of $300,000 for better readability
+- **Trend Indicators**: Color-coded arrows with precise percentages (2 decimal places)
 - **Responsive Design**: Adapts to different screen sizes
 - **Error Handling**: Graceful handling of missing data
+
+### Dashboard Usage Instructions
+
+1. **Launch the Dashboard**:
+   ```bash
+   streamlit run dashboard.py
+   ```
+
+2. **Use the Filters**:
+   - **Year Filter**: Select analysis year (top-right dropdown) 
+   - **Month Filter**: Choose specific month or "All Months" for full year analysis
+   - All charts update automatically when filters change
+
+3. **Interpret the Metrics**:
+   - **Green arrows (↗)**: Positive trends vs previous period
+   - **Red arrows (↘)**: Negative trends vs previous period  
+   - **KPI Cards**: Show current values with year-over-year comparisons
+   - **Charts**: Interactive - hover for detailed values
+
+4. **Navigation Tips**:
+   - Charts are fully interactive (zoom, pan, select)
+   - Choropleth map shows state-level revenue distribution
+   - Delivery time analysis helps identify customer satisfaction patterns
 
 ## Future Enhancements
 
